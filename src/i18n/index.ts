@@ -2,13 +2,16 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { zhCN, type Locale } from './locales/zh-CN';
 import { enUS } from './locales/en-US';
+import { taIN } from './locales/ta'; // match your export
 
-export type LocaleKey = 'zh-CN' | 'en-US';
+export type LocaleKey = 'zh-CN' | 'en-US' | 'ta-IN';
 
 const locales: Record<LocaleKey, Locale> = {
   'zh-CN': zhCN,
   'en-US': enUS,
+  'ta-IN': taIN, // add Tamil here
 };
+
 
 interface I18nState {
   locale: LocaleKey;

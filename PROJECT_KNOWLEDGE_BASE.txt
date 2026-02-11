@@ -1,0 +1,931 @@
+================================================================================
+TBT PAPER TERMINAL - PROJECT KNOWLEDGE BASE & MT5 INTEGRATION ROADMAP
+================================================================================
+
+PROJECT OVERVIEW
+================================================================================
+
+TBT Paper Terminal is a professional-grade crypto trading terminal UI built with React + TypeScript.
+It's a frontend-only application currently designed for paper trading (simulated trades with Binance data).
+
+Current Purpose:
+- Provides a production-ready trading interface for cryptocurrency exchanges
+- Handles high-frequency WebSocket data (50+ messages/second)
+- Processes order book snapshots and incremental deltas
+- Implements client-side order matching engine
+- Runs on Desktop and Mobile with adaptive layouts
+
+Key Features:
+✓ Real-time order book visualization
+✓ Advanced order types (Limit, Market, Stop-Limit, OCO, Trailing Stops)
+✓ Position management with TP/SL
+✓ Automated trading triggers (Conditional Orders)
+✓ Account and wallet management
+✓ Order history and trade analytics
+✓ Multi-language support (English, Chinese)
+✓ Dark/Light theme support
+✓ Data confidence monitoring (Honest System)
+
+Tech Stack:
+- React 18.3 (UI Framework)
+- TypeScript (Type Safety)
+- Zustand (State Management)
+- Vite (Build Tool)
+- Decimal.js (Precision Math)
+- React Router (Navigation)
+- Web Workers (Background Processing)
+
+
+APPLICATION ARCHITECTURE
+================================================================================
+
+Directory Structure:
+```
+src/
+├── worker/              # [CRITICAL] WebWorker for data processing
+│   ├── marketDataWorker.ts    # Ingests WebSocket, processes order book
+│   └── orderbook.ts           # Order book state machine & merging logic
+│
+├── store/               # Zustand state management (domain-specific)
+│   ├── marketStore.ts         # Market data, prices, connection status
+│   ├── tradingStore.ts        # Orders, positions, matching engine
+│   ├── walletStore.ts         # Account balance, wallet operations
+│   ├── automationStore.ts     # Automated trading triggers
+│   ├── authStore.ts           # User authentication (paper trading)
+│   ├── settingsStore.ts       # User preferences
+│   └── watchlistStore.ts      # Selected symbols & favorites
+│
+├── components/          # React UI Components
+│   ├── Layout/              # Mobile/Desktop adaptive routing
+│   ├── OrderBook/           # Order book visualization
+│   ├── OrderEntry/          # Trade entry form
+│   ├── Positions/           # Active positions panel
+│   ├── RiskRibbon/          # Risk metrics display
+│   ├── Chart/               # Price charts
+│   ├── Wallet/              # Account & wallet UI
+│   └── ... (20+ other components)
+│
+├── pages/               # Page-level containers
+│   ├── TradePage.tsx        # Main trading interface
+│   ├── MarketsPage.tsx      # Market overview
+│   ├── WalletPage.tsx       # Wallet management
+│   ├── OrdersPage.tsx       # Order history
+│   └── SettingsPage.tsx     # Settings
+│
+├── types/               # TypeScript type definitions
+│   ├── trading.ts       # Order, Position, Fill types
+│   ├── market.ts        # OrderBook, Trade, DataConfidence types
+│   ├── wallet.ts        # Account, Balance types
+│   └── automation.ts    # Automation rules & triggers
+│
+├── utils/               # Utility functions
+│   ├── decimal.ts       # Precision math wrapper
+│   ├── timeFormat.ts    # Time formatting
+│   └── errorHandler.ts  # Error handling
+│
+└── styles/              # Global styles
+    ├── global.css       # Base styles
+    └── tokens.css       # Design tokens
+
+
+DATA FLOW ARCHITECTURE
+================================================================================
+
+Current Flow (Binance Paper Trading):
+═════════════════════════════════════
+
+1. INGESTION:
+   Binance Public WebSocket Stream (wss://stream.binance.com:9443/ws)
+        ↓
+   Web Worker (marketDataWorker.ts)
+        ↓
+
+2. PROCESSING IN WORKER:
+   - Parse JSON messages (OHLC, depth updates, trades)
+   - Handle order book snapshot + delta merging
+   - Validate sequence numbers (u, U fields)
+   - Calculate derived metrics (VWAP, Imbalance, etc)
+   - Throttle updates to 60fps
+        ↓
+
+3. STATE UPDATE:
+   Dispatch to Zustand Stores (Main Thread)
+   - marketStore: OrderBook, Metrics, Recent Trades
+   - tradingStore: Match limit orders against new prices
+   - walletStore: Update balances, P&L
+        ↓
+
+4. UI RENDERING:
+   React Components subscribe to store updates
+   - Selectors prevent unnecessary re-renders
+   - Real-time visualization (prices, charts, P&L)
+
+
+Order Matching Flow:
+═════════════════════════════════════
+
+User Places Order:
+   1. Check balance via walletStore
+   2. Freeze balance for pending orders
+   3. Store in tradingStore.orders array
+   
+On Every Price Update (from marketStore):
+   4. Check if limit orders match current price
+   5. If match: Generate Fill record
+   6. Update position: positionMap[symbol]
+   7. Update balance: walletStore
+   8. Update P&L: realizedPnL += profitLoss
+
+Advanced Orders:
+   - Stop-Limit: Check if triggerPrice hit, then place limit order
+   - OCO (One-Cancels-Other): Pair of orders, cancel linked if one fills
+   - Trailing Stop: Dynamically adjust stopPrice as price moves favorably
+
+
+STATE MANAGEMENT PATTERN
+================================================================================
+
+Each Store (Zustand) follows this pattern:
+
+Example: marketStore.ts
+─────────────────────────
+
+interface MarketState {
+  // State
+  orderBook: OrderBook | null;
+  connectionStatus: ConnectionStatus;
+  metrics: DerivedMetrics | null;
+  
+  // Actions
+  subscribe: (symbol: string) => void;
+  updateOrderBook: (data: OrderBookUpdatePayload) => void;
+}
+
+export const useMarketStore = create<MarketState>()(
+  subscribeWithSelector((set, get) => ({
+    orderBook: null,
+    connectionStatus: { state: 'disconnected', ... },
+    
+    subscribe: (symbol) => {
+      // Init WebWorker
+      worker.postMessage({ type: 'SUBSCRIBE', symbol })
+    },
+    
+    updateOrderBook: (data) => {
+      set(prev => ({
+        ...prev,
+        orderBook: mergeDepthUpdate(prev.orderBook, data)
+      }))
+    }
+  }))
+);
+
+// Usage in components:
+const MyComponent = () => {
+  const orderBook = useMarketStore(state => state.orderBook);
+  // Component re-renders ONLY when orderBook changes
+}
+
+
+HOW THE MATCHING ENGINE WORKS
+================================================================================
+
+File: src/store/tradingStore.ts (Lines 1-986)
+
+Current System:
+───────────────
+
+1. USER CREATES ORDER:
+   createOrder(params) {
+     - Validate quantity vs balance
+     - For MARKET orders: Match immediately at mid price
+     - For LIMIT orders: Add to orders[] array, wait for match trigger
+     - Deduct balance and freeze funds
+   }
+
+2. PRICE UPDATE TRIGGERS CHECK:
+   marketStore publishes new metrics
+        ↓
+   tradingStore.checkConditionalOrders(symbol, newPrice, prevPrice)
+        ↓
+   For each limit order matching symbol:
+     if (newPrice <= limitPrice) {  // Sell limit can execute
+       executeTrade()
+     }
+
+3. EXECUTE TRADE:
+   - Generate Trade record with execution price
+   - Update Position (add quantity, update avgEntryPrice)
+   - Deduct fees from balance
+   - Record P&L for realized trades
+   - Emit notification
+
+4. ADVANCED ORDERS:
+   
+   Stop-Limit:
+   - Wait for stopPrice trigger
+   - Convert to limit order
+   - Then follow normal limit order logic
+   
+   OCO (One-Cancels-Other):
+   - Create 2 linked orders (stop & limit)
+   - If ONE executes → cancel the OTHER
+   - Store in ocoOrders[] with reference IDs
+   
+   Trailing Stop:
+   - Track highest price (trailingStopPercent)
+   - Update stopPrice dynamically as price rises
+   - Trigger when price falls by stopPercent
+
+KEY COMPONENTS:
+   - FEE_RATE = 0.1% (configurable)
+   - SIMULATED_DELAY = 50-200ms (realistic latency)
+   - Uses Decimal.js for precision (no floating-point errors)
+
+
+HOW TO ADAPT FOR MT5-STYLE SERVER CONNECTION
+================================================================================
+
+GOAL: Connect this frontend to your own trading server instead of Binance
+
+Architecture Change Required:
+────────────────────────────
+
+BEFORE (Current):
+   Binance WebSocket
+        ↓
+   Web Worker (Client-side processing)
+        ↓
+   State Management
+        ↓
+   UI
+
+AFTER (MT5 Integration):
+   Your Trading Server (WebSocket or REST)
+        ↓
+   Web Worker → Parse Server Protocol
+        ↓
+   State Management (No change needed!)
+        ↓
+   UI (No change needed!)
+
+Benefits:
+✓ Most UI code stays the same
+✓ Only data layer changes
+✓ Existing order matching logic works (if server-side or hybrid)
+
+
+INTEGRATION STRATEGY
+================================================================================
+
+Phase 1: Remove Binance Dependency (WEEK 1)
+═════════════════════════════════════════════
+
+Step 1.1: Create server data adapter
+File: src/services/serverDataService.ts
+
+```typescript
+interface ServerMessage {
+  type: 'price_update' | 'order_response' | 'trade_fill' | 'balance_update';
+  symbol?: string;
+  data: any;
+}
+
+class ServerDataService {
+  private ws: WebSocket | null = null;
+  
+  connect(serverUrl: string, userId: string) {
+    this.ws = new WebSocket(serverUrl);
+    
+    this.ws.onmessage = (event) => {
+      const msg = JSON.parse(event.data) as ServerMessage;
+      this.handleServerMessage(msg);
+    }
+  }
+  
+  handleServerMessage(msg: ServerMessage) {
+    // Dispatch to appropriate Zustand store
+    // Similar to current worker approach
+  }
+  
+  // Send trade order to server
+  placeOrder(order: OrderParams) {
+    this.ws?.send(JSON.stringify({
+      type: 'PLACE_ORDER',
+      payload: order
+    }));
+  }
+}
+```
+
+Step 1.2: Replace Web Worker with Server Connection
+File: src/worker/marketDataWorker.ts → Refactor
+
+Currently:
+- Connects to Binance WebSocket
+- Processes market data locally
+- Sends to store
+
+New approach:
+- Connects to YOUR server WebSocket
+- Server sends processed data
+- Worker just relays to store (less processing)
+
+Step 1.3: Update marketStore.ts
+- Change: const worker = new Worker(...) to use ServerDataService
+- Market data now comes from server instead of Binance
+
+
+Phase 2: Server Trade Execution (WEEK 2)
+═════════════════════════════════════════════
+
+Step 2.1: Add server order submission
+File: src/store/tradingStore.ts (modify createOrder)
+
+Current (Client-side matching):
+```typescript
+createOrder: (params) => {
+  // Validate balance
+  // Match immediately or add to pending
+  // Update local state
+}
+```
+
+New (Server integration):
+```typescript
+createOrder: (params) => {
+  // Send to server
+  serverService.placeOrder(params);
+  
+  // Show pending state
+  const orderId = uuidv4();
+  set(state => ({
+    orders: [
+      ...state.orders,
+      { id: orderId, status: 'pending', ...params }
+    ]
+  }));
+  
+  // Wait for server response
+  // Server sends back TRADE_FILL or ORDER_REJECTED
+}
+```
+
+Step 2.2: Handle server responses
+```typescript
+// Server sends: { type: 'ORDER_RESPONSE', orderId, status, fill? }
+
+const handleOrderResponse = (response) => {
+  if (response.status === 'filled') {
+    // Server executed trade
+    // Update order status
+    // Update position
+    // Update balance
+    // Emit notification
+  } else if (response.status === 'rejected') {
+    // Restore balance, show error
+  }
+}
+```
+
+Step 2.3: Real-time price updates from server
+Server streams:
+```json
+{
+  "type": "PRICE_UPDATE",
+  "symbol": "EURUSD",
+  "bid": 1.0950,
+  "ask": 1.0952,
+  "mid": 1.0951,
+  "timestamp": 1704700000000
+}
+```
+
+Handled by:
+```typescript
+const handlePriceUpdate = (update) => {
+  useMarketStore.setState(state => ({
+    orderBook: {
+      ...state.orderBook,
+      bids: [[update.bid, 'any_size']],  // Mock depth
+      asks: [[update.ask, 'any_size']],
+      mid: update.mid,
+      timestamp: update.timestamp
+    }
+  }));
+}
+```
+
+
+Phase 3: Wallet & Balance Sync (WEEK 2-3)
+═════════════════════════════════════════════
+
+Step 3.1: Server sends account updates
+Server streams:
+```json
+{
+  "type": "BALANCE_UPDATE",
+  "balances": {
+    "USD": { total: 100000, available: 95000 },
+    "EUR": { total: 50000, available: 50000 }
+  },
+  "positions": [
+    { symbol: "EURUSD", side: "long", quantity: 1.5, avgPrice: 1.089 }
+  ]
+}
+```
+
+Step 3.2: Sync to walletStore
+```typescript
+const handleBalanceUpdate = (update) => {
+  useWalletStore.setState({
+    balances: update.balances,
+  });
+};
+
+const handlePositionUpdate = (update) => {
+  useTradingStore.setState({
+    positions: new Map(update.positions.map(p => [p.symbol, p]))
+  });
+};
+```
+
+Step 3.3: Remove initial paper trading grant
+File: src/App.tsx
+- No longer needed since server manages real balances
+- Remove: grantInitialFunds() from initialization
+
+
+Phase 4: Server-Side Matching (Optional) (WEEK 3-4)
+═════════════════════════════════════════════════════
+
+Two options:
+
+OPTION A: Client-side matching (Current)
+- UI sends order to server
+- Server validates (balance, margin, etc)
+- Client performs matching logic
+- Client sends back matched price
+- Fast feedback but less control
+
+OPTION B: Server-side matching (Recommended)
+- UI sends order to server
+- Server validates, matches, executes
+- Server sends FILL message
+- Slightly higher latency but more reliable
+
+Recommended: Start with OPTION A for responsiveness
+Later migrate to OPTION B for reliability
+
+
+Phase 5: Authentication & Session Management (WEEK 4)
+════════════════════════════════════════════════════════
+
+Currently: Fake auth (paper trading)
+
+New approach:
+```typescript
+// src/services/authService.ts
+
+class AuthService {
+  async login(username: string, password: string) {
+    const response = await fetch('YOUR_SERVER/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password })
+    });
+    
+    const { token, userId, serverUrl } = await response.json();
+    
+    // Store token
+    localStorage.setItem('authToken', token);
+    
+    // Connect to personalized WebSocket
+    serverDataService.connect(serverUrl, userId);
+  }
+}
+```
+
+Update marketStore to include auth:
+```typescript
+subscribe: async (symbol) => {
+  const token = localStorage.getItem('authToken');
+  
+  this.ws?.send(JSON.stringify({
+    type: 'SUBSCRIBE',
+    symbol,
+    token  // Server validates token
+  }));
+}
+```
+
+
+IMPLEMENTATION ROADMAP
+================================================================================
+
+WEEK 1: Server Integration Foundation
+──────────────────────────────────────
+
+Monday:
+  ☐ Create ServerDataService (src/services/serverDataService.ts)
+  ☐ Define server message protocol (JSON schema)
+  ☐ Create test server (Node.js echo server or mock)
+
+Tuesday-Wednesday:
+  ☐ Replace marketDataWorker with server connection
+  ☐ Test market data streaming (prices, order book)
+  ☐ Update marketStore to handle server messages
+
+Thursday:
+  ☐ Handle connection/disconnection scenarios
+  ☐ Implement reconnection logic with exponential backoff
+  ☐ Add connection status display
+
+Friday:
+  ☐ Write test cases
+  ☐ Documentation for server protocol
+
+
+WEEK 2: Trade Execution
+───────────────────────
+
+Monday-Tuesday:
+  ☐ Modify createOrder() in tradingStore
+  ☐ Send orders to server instead of matching locally
+  ☐ Handle ORDER_RESPONSE messages
+
+Wednesday:
+  ☐ Implement server-side order status tracking
+  ☐ Handle order rejections gracefully
+  ☐ Queue orders if server busy
+
+Thursday-Friday:
+  ☐ Sync balance updates from server
+  ☐ Display real account information
+  ☐ Handle insufficient balance errors
+
+
+WEEK 3: Advanced Features
+──────────────────────────
+
+Monday-Tuesday:
+  ☐ Support conditional orders from server
+  ☐ Handle OCO orders (if server supports)
+  ☐ Position management updates
+
+Wednesday-Thursday:
+  ☐ Order history sync
+  ☐ Trade history sync
+  ☐ Analytics calculations
+
+Friday:
+  ☐ Integration testing
+
+
+WEEK 4: Production Hardening
+─────────────────────────────
+
+Monday-Tuesday:
+  ☐ Real authentication (JWT or similar)
+  ☐ Session management
+  ☐ Error handling and recovery
+
+Wednesday-Thursday:
+  ☐ Performance optimization
+  ☐ Latency monitoring
+  ☐ Data validation
+
+Friday:
+  ☐ Security audit
+  ☐ Load testing
+
+
+KEY FILES TO MODIFY
+================================================================================
+
+Priority 1 (Essential):
+─────────────────────
+1. src/services/serverDataService.ts [NEW]
+   - Create server connection
+   - Handle all server messages
+   - Dispatch to stores
+
+2. src/worker/marketDataWorker.ts [MODIFY]
+   - Adapt to server data format
+   - Reduce processing (server does more)
+
+3. src/store/marketStore.ts [MODIFY]
+   - Change data source from Binance to server
+   - Update connection logic
+
+4. src/store/tradingStore.ts [MODIFY]
+   - Send orders to server
+   - Wait for responses
+   - Update on server fills
+
+5. src/store/walletStore.ts [MODIFY]
+   - Sync balances from server
+   - Remove paper trading initial grant
+
+
+Priority 2 (Important):
+──────────────────────
+6. src/store/authStore.ts [MODIFY]
+   - Real authentication
+   - Token management
+
+7. src/App.tsx [MODIFY]
+   - Remove auth bypass
+   - Add server connection init
+
+8. src/types/market.ts [MODIFY]
+   - Add server message types
+   - Update data structures
+
+
+Priority 3 (Nice to have):
+─────────────────────────
+9. src/types/trading.ts [ENHANCE]
+   - Server-specific order fields
+   - Server status codes
+
+10. Documentation [NEW]
+    - Server API specification
+    - Protocol documentation
+    - Integration guide
+
+
+EXPECTED CHANGES SUMMARY
+================================================================================
+
+UI LAYER:
+  No changes! (Component files stay the same)
+  
+  Existing components will work with server data:
+  - OrderBook: Renders server prices
+  - OrderEntry: Sends to server
+  - Positions: Shows server positions
+  - Wallet: Displays server balances
+
+STATE LAYER:
+  ~40% modification required
+  - marketStore: Data source change
+  - tradingStore: Order flow change
+  - walletStore: Balance sync
+  - authStore: Real authentication
+
+WORKER/SERVICE LAYER:
+  ~80% replacement
+  - Remove: marketDataWorker (Binance-specific logic)
+  - Add: serverDataService (Your protocol)
+  - Adapt: Message parsing & validation
+
+TOTAL ESTIMATED EFFORT:
+  - If you have server API spec ready: 2-3 weeks
+  - If you need to build server too: 4-6 weeks
+  - Testing & optimization: +1-2 weeks
+
+
+EXAMPLE SERVER MESSAGE PROTOCOL
+================================================================================
+
+This is a suggested protocol. Adapt to your MT5 backend.
+
+1. CONNECTION:
+   Client → Server:
+   {
+     "type": "CONNECT",
+     "token": "jwt_token_here",
+     "userId": "user123"
+   }
+
+2. SUBSCRIBE TO SYMBOL:
+   Client → Server:
+   {
+     "type": "SUBSCRIBE",
+     "symbol": "EURUSD",
+     "dataType": ["prices", "orderbook", "trades"]
+   }
+   
+   Server → Client (repeated):
+   {
+     "type": "PRICE_UPDATE",
+     "symbol": "EURUSD",
+     "bid": 1.0950,
+     "ask": 1.0952,
+     "mid": 1.0951,
+     "spread": 0.0002,
+     "timestamp": 1704700000000
+   }
+
+3. PLACE ORDER:
+   Client → Server:
+   {
+     "type": "PLACE_ORDER",
+     "orderId": "client_order_123",  // UUID
+     "symbol": "EURUSD",
+     "side": "buy",                  // "buy" or "sell"
+     "type": "limit",                // "limit", "market", "stop"
+     "volume": 1.5,
+     "price": 1.0945,                // For limit/stop orders
+     "stopPrice": null,
+     "takeProfitPrice": null,
+     "timestamp": 1704700000000
+   }
+
+4. ORDER RESPONSE:
+   Server → Client:
+   {
+     "type": "ORDER_RESPONSE",
+     "clientOrderId": "client_order_123",
+     "orderId": "server_order_456",
+     "status": "filled",              // "accepted", "filled", "rejected"
+     "fillPrice": 1.0943,
+     "fillVolume": 1.5,
+     "reason": null                   // If rejected
+   }
+
+5. TRADE FILL:
+   Server → Client:
+   {
+     "type": "TRADE_FILL",
+     "orderId": "server_order_456",
+     "clientOrderId": "client_order_123",
+     "symbol": "EURUSD",
+     "side": "buy",
+     "executionPrice": 1.0943,
+     "volume": 1.5,
+     "commission": 2.25,              // Fee
+     "timestamp": 1704700000000
+   }
+
+6. POSITION UPDATE:
+   Server → Client:
+   {
+     "type": "POSITION_UPDATE",
+     "positions": [
+       {
+         "symbol": "EURUSD",
+         "side": "long",              // "long" or "flat"
+         "volume": 1.5,
+         "avgPrice": 1.0943,
+         "currentPrice": 1.0950,
+         "unrealizedPnL": 10.50,
+         "margin": 3000
+       }
+     ]
+   }
+
+7. BALANCE UPDATE:
+   Server → Client:
+   {
+     "type": "BALANCE_UPDATE",
+     "balances": {
+       "USD": {
+         "total": 100000,
+         "available": 96000,
+         "margin": 4000
+       }
+     }
+   }
+
+8. ERROR:
+   Server → Client:
+   {
+     "type": "ERROR",
+     "code": "INSUFFICIENT_BALANCE",
+     "message": "Not enough balance for this trade"
+   }
+
+
+TESTING STRATEGY
+================================================================================
+
+Unit Tests (Jest):
+─────────────────
+- tradingStore: Order creation, validation, matching
+- marketStore: Price updates, data confidence
+- walletStore: Balance updates, calculations
+
+Integration Tests:
+──────────────────
+- Server connection → price updates → UI render
+- Order submission → server response → position update
+- Balance sync → order rejection → UI notification
+
+E2E Tests (Cypress):
+────────────────────
+- Full trading flow: Login → Subscribe → Place Order → Check Position
+- Error scenarios: Server down, insufficient balance, network delay
+- Mobile responsiveness with server data
+
+Performance Tests:
+──────────────────
+- Latency measurement: Order submission to UI update
+- Data throughput: Max prices/second handled
+- Memory: Long-running session (24+ hours)
+
+
+TROUBLESHOOTING COMMON ISSUES
+================================================================================
+
+Issue 1: Prices not updating
+  Cause: Server connection not established or wrong message type
+  Solution:
+    - Check browser console for connection errors
+    - Verify server sends PRICE_UPDATE messages
+    - Check message format matches schema
+    - Add logging in marketStore
+
+Issue 2: Orders not executing
+  Cause: Order not reaching server or validation failing
+  Solution:
+    - Check network tab for order POST/message
+    - Verify balance check in server
+    - Check order parameters (symbol, volume, price format)
+    - Add server logs
+
+Issue 3: Balance not syncing
+  Cause: Server not sending BALANCE_UPDATE or message handler not triggered
+  Solution:
+    - Force disconnect/reconnect
+    - Manually request balance update
+    - Check wallet store message handler
+    - Verify user has positions
+
+Issue 4: WebSocket drops frequently
+  Cause: Network instability or server timeout
+  Solution:
+    - Implement heartbeat/ping-pong
+    - Add exponential backoff reconnection
+    - Increase server timeout settings
+    - Monitor network quality
+
+
+FUTURE ENHANCEMENTS
+================================================================================
+
+Phase 5+ Ideas:
+
+1. Backtesting Module:
+   - Replay historical server data
+   - Test strategies without live trades
+   - Performance analytics
+
+2. API Automation:
+   - REST API alongside WebSocket
+   - Programmatic trade execution
+   - Third-party integrations
+
+3. Advanced Analytics:
+   - Machine learning trade analysis
+   - Predictive price alerts
+   - Risk modeling
+
+4. Multi-Account:
+   - Switch between accounts
+   - Unified dashboard
+   - Risk aggregation
+
+5. Mobile App:
+   - React Native version
+   - Offline-first capabilities
+   - Push notifications
+
+6. Trading Signals:
+   - Generate automated signals
+   - Webhook integrations
+   - Signal marketplace
+
+
+SUMMARY
+================================================================================
+
+Current State:
+  ✓ Professional trading UI
+  ✓ Paper trading with Binance data
+  ✓ Full order types support
+  ✓ Mobile & Desktop layouts
+  ✓ Production-ready code
+
+Transformation to MT5-Style:
+  1. Create server adapter (ServerDataService)
+  2. Replace Binance WebSocket with your server
+  3. Adapt order flow to server-side execution
+  4. Sync balances and positions from server
+  5. Add real authentication
+
+Timeline: 2-4 weeks depending on:
+  - Server API readiness
+  - Team size
+  - Testing requirements
+  - Documentation needs
+
+Contact/Support:
+  - Review Architecture docs: docs/README_ARCHITECTURE.md
+  - Check types: src/types/
+  - Study stores: src/store/
+  - Reference existing worker: src/worker/marketDataWorker.ts
+
+================================================================================
+End of Knowledge Base
+================================================================================

@@ -84,7 +84,7 @@ export const enUS: Locale = {
   // Language
   language: {
     label: 'Language',
-    zh: '中文',
+    zh: 'தமிழ்',
     en: 'English',
   },
 

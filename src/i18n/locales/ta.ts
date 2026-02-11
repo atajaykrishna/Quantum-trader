@@ -1,5 +1,5 @@
-export const zhCN = {
-  // 通用
+export const taIN = {
+  // பொதுவானவை (General)
   common: {
     loading: 'ஏற்றப்படுகிறது...',
     error: 'பிழை',
@@ -82,7 +82,7 @@ export const zhCN = {
   // மொழி (Language)
   language: {
     label: 'மொழி',
-    zh: 'தமிழ்',
+    zh: 'சீனம் (中文)',
     en: 'ஆங்கிலம் (English)',
     ta: 'தமிழ்',
   },
@@ -223,11 +223,11 @@ export const zhCN = {
     midPrice: 'நடுத்தர விலை',
     spread: 'இடைவெளி',
     imbalance: 'சமநிலையின்மை',
-    volatility: 'குறுகிய கால ஏற்ற இறக்கம்',
+    volatility: 'நிலையற்ற தன்மை',
     tradeIntensity: 'வர்த்தக தீவிரம்',
     vwap: 'VWAP (விலை சராசரி)',
     liquidityScore: 'பணப்புழக்கம் மதிப்பெண்',
-    slippageEst: 'மதிப்பிடப்பட்ட நழுவல் (Slippage)',
+    slippageEst: 'விலை விலகல்',
     midPriceDesc: 'சிறந்த வாங்குதல் மற்றும் விற்பனை விலையின் சராசரி',
     spreadDesc: 'வாங்குதல் மற்றும் விற்பனை விலைக்கும் இடையிலான வித்தியாசம்',
     imbalanceDesc: 'வாங்குதல் மற்றும் விற்பனை ஆர்டர்களின் ஒப்பீடு (-1 முதல் 1 வரை)',
@@ -540,7 +540,7 @@ export const zhCN = {
   nav: {
     trade: 'வர்த்தகம்',
     markets: 'சந்தைகள்',
-    wallet: 'வாலட்',
+    wallet: 'கருவூலம்',
     orders: 'ஆர்டர்கள்',
     more: 'மேலும்',
     account: 'கணக்கு',
@@ -1134,4 +1134,4 @@ export const zhCN = {
   },
 };
 
-export type Locale = typeof zhCN;
+export type Locale = typeof taIN;
