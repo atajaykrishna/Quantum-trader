@@ -13,8 +13,8 @@
   </p>
   <br>
   <p>
-    <a href="docs/README_ARCHITECTURE.md"><b>Architecture Documentation</b></a> |
-    <a href="docs/benchmarks.md"><b>Performance Benchmarks</b></a>
+    <a href="tbt-paper-terminal/docs/README_ARCHITECTURE.md"><b>Architecture Documentation</b></a> |
+    <a href="tbt-paper-terminal/docs/benchmarks.md"><b>Performance Benchmarks</b></a>
   </p>
 </div>
 
@@ -103,7 +103,7 @@ graph LR
 1. **Clone the repository**
 
     ```bash
-    git clone https://github.com/TheNewMikeMusic/tbt-paper-terminal.git
+    git clone https://github.com/atajaykrishna/Quantum-trader.git
     cd tbt-paper-terminal
     ```
 
