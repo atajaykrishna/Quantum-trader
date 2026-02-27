@@ -13,8 +13,8 @@
   </p>
   <br>
   <p>
-    <a href="docs/README_ARCHITECTURE.md"><b>Architecture Documentation</b></a> |
-    <a href="docs/benchmarks.md"><b>Performance Benchmarks</b></a>
+    <a href="tbt-paper-terminal/docs/README_ARCHITECTURE.md"><b>Architecture Documentation</b></a> |
+    <a href="tbt-paper-terminal/docs/benchmarks.md"><b>Performance Benchmarks</b></a>
   </p>
 </div>
 
