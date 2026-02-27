@@ -1,0 +1,20 @@
+[package]
+name = "tbt-paper-terminal"
+version = "0.1.0"
+edition = "2021"
+description = "Desktop shell for TBT Paper Terminal"
+authors = ["Your Name <you@example.com>"]
+publish = false
+rust-version = "1.70"
+
+[dependencies]
+tauri = { version = "2", features = ["wry"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[profile.release]
+lto = true
+strip = "symbols"
+codegen-units = 1
+opt-level = "s"

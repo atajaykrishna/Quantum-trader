@@ -1,0 +1,118 @@
+.container {
+  position: relative;
+  display: inline-block;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-family: var(--font-mono);
+}
+
+.toggle:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.toggle:active {
+  transform: scale(0.98);
+}
+
+.icon {
+  font-size: 1rem;
+}
+
+.text {
+  font-weight: 500;
+}
+
+.menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: var(--space-1);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 160px;
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.menuItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--space-2) var(--space-2);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-align: left;
+  font-family: inherit;
+}
+
+.menuItem:last-child {
+  border-bottom: none;
+}
+
+.menuItem:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.menuItem.active {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+  font-weight: 500;
+}
+
+.menuItemLabel {
+  font-weight: 500;
+  flex: 1;
+}
+
+.menuItemSubtext {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-left: var(--space-1);
+}
+
+.menuItem.active .menuItemSubtext {
+  color: var(--color-info);
+}
+
+.checkIcon {
+  margin-left: var(--space-1);
+  color: var(--color-info);
+}
+
+@media (max-width: 768px) {
+  .text {
+    display: none;
+  }
+
+  .menu {
+    right: auto;
+    left: 0;
+  }
+}
+
+
+
+
+
